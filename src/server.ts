@@ -3,6 +3,8 @@ import dotenv from "dotenv";
 import cors from "cors";
 import { connectDB } from "./config/db";
 import authRoutes from "./routes/AuthRoute";
+import chatRoutes from "./routes/chatRoutes";
+import messageRoutes from "./routes/messageRoutes";
 
 const app = express();
 dotenv.config({ path: "./src/.env" });
@@ -14,6 +16,8 @@ app.use(cors());
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
+app.use("/api/chats", chatRoutes);
+app.use("/api/messages",messageRoutes);
 
 
 // Test route
