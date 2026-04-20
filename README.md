@@ -124,13 +124,7 @@ async function decryptMessage(cipher: ArrayBuffer, privateKey: CryptoKey) {
 * 🟢 File sharing with encryption
 * 🟢 Offline message sync
 * 🟢 Mobile support
-
----
-
-## 📜 License
-
-MIT License
-
+  
 ---
 
 ## 👨‍💻 Contributers
