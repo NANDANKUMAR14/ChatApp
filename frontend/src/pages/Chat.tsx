@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { getSocket } from '../socket/socket';
@@ -40,9 +40,13 @@ interface Chat {
   chatName?: string;
   name?: string;
   latestMessage?: {
+    _id?: string;
     content: string;
     mediaType?: MediaType;
     mediaUrl?: string;
+    createdAt?: string;
+    sender?: string | { _id?: string; toString?: () => string };
+    status?: 'sent' | 'delivered' | 'seen';
   };
   users?: Array<{ _id: string; name: string }>;
 }
@@ -72,7 +76,23 @@ export const Chat: React.FC = () => {
   const getMessageChatId = (message: Message) =>
     typeof message.chat === 'string' ? message.chat : message.chat?._id;
 
-  const syncLatestMessagePreview = (chatId: string, nextMessages: Message[]) => {
+  const getLatestMessageSenderId = (chat: Chat) => {
+    const sender = chat.latestMessage?.sender;
+    if (!sender) return null;
+
+    if (typeof sender === 'string') {
+      return sender;
+    }
+
+    if (typeof sender === 'object' && sender._id && typeof sender._id === 'string') {
+      return sender._id;
+    }
+
+    const maybeId = String(sender);
+    return maybeId === '[object Object]' ? null : maybeId;
+  };
+
+  const syncLatestMessagePreview = useCallback((chatId: string, nextMessages: Message[]) => {
     const latest = [...nextMessages].reverse().find((message) => getMessageChatId(message) === chatId);
 
     setChats((prev) => {
@@ -83,25 +103,64 @@ export const Chat: React.FC = () => {
         ...prev[chatIndex],
         latestMessage: latest
           ? {
+              _id: latest._id,
               content: getMessagePreview(latest),
               mediaType: latest.mediaType,
               mediaUrl: latest.mediaUrl,
+              createdAt: latest.createdAt,
+              sender: latest.sender,
+              status: latest.status,
             }
           : undefined,
       };
 
       return [updatedChat, ...prev.filter((chat) => chat._id !== chatId)];
     });
-  };
+  }, []);
 
-  const markChatAsSeen = async (chatId: string) => {
+  const fetchChats = useCallback(async () => {
+    setLoadingChats(true);
+    try {
+      const response = await api.get<Chat[]>('/chats');
+      const formattedChats = response.data.map((chat) => ({
+        ...chat,
+        name: !chat.isGroupChat
+          ? (chat.users?.find((u) => u._id !== user?._id)?.name || 'Chat')
+          : (chat.chatName || 'Group Chat'),
+      }));
+      setChats(formattedChats);
+      if (formattedChats.length > 0 && !selectedChatId) {
+        setSelectedChatId(formattedChats[0]._id);
+      }
+    } catch (error) {
+      console.error('Failed to fetch chats:', error);
+      setMessageError('Failed to load chats');
+    } finally {
+      setLoadingChats(false);
+    }
+  }, [selectedChatId, user?._id]);
+
+  const fetchMessages = useCallback(async (chatId: string) => {
+    setLoadingMessages(true);
+    try {
+      const response = await api.get<Message[]>(`/messages/${chatId}`);
+      setMessages(response.data);
+    } catch (error) {
+      console.error('Failed to fetch messages:', error);
+      setMessageError('Failed to load messages');
+    } finally {
+      setLoadingMessages(false);
+    }
+  }, []);
+
+  const markChatAsSeen = useCallback(async (chatId: string) => {
     try {
       await api.patch('/messages/seen', { chatId });
     } catch (error) {
       // Seen receipts are best-effort and should not interrupt chat usage.
       console.error('Failed to mark messages as seen:', error);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -109,7 +168,9 @@ export const Chat: React.FC = () => {
       return;
     }
 
-    fetchChats();
+    void Promise.resolve().then(() => {
+      void fetchChats();
+    });
     
     const socket = getSocket();
 
@@ -134,11 +195,13 @@ export const Chat: React.FC = () => {
       socket?.off('typing');
       socket?.off('stop typing');
     };
-  }, [user, navigate]);
+  }, [user, navigate, fetchChats]);
 
   useEffect(() => {
     if (selectedChatId) {
-      fetchMessages(selectedChatId);
+      void Promise.resolve().then(() => {
+        void fetchMessages(selectedChatId);
+      });
       const socket = getSocket();
       socket?.emit('join chat', selectedChatId);
 
@@ -152,9 +215,13 @@ export const Chat: React.FC = () => {
           const updatedChat = {
             ...prev[chatIndex],
             latestMessage: {
+              _id: message._id,
               content: getMessagePreview(message),
               mediaType: message.mediaType,
               mediaUrl: message.mediaUrl,
+              createdAt: message.createdAt,
+              sender: message.sender,
+              status: message.status,
             },
           };
 
@@ -176,8 +243,35 @@ export const Chat: React.FC = () => {
         }
       });
 
-      socket?.on('messages seen', ({ chatId, messageIds }: { chatId: string; messageIds: string[] }) => {
-        if (chatId !== selectedChatId || !Array.isArray(messageIds) || messageIds.length === 0) {
+      socket?.on('messages seen', ({ chatId, messageIds, seenBy }: { chatId: string; messageIds: string[]; seenBy?: string }) => {
+        if (!Array.isArray(messageIds) || messageIds.length === 0) {
+          return;
+        }
+
+        if (seenBy === user?._id) {
+          setChats((prev) =>
+            prev.map((chat) => {
+              if (chat._id !== chatId || !chat.latestMessage) {
+                return chat;
+              }
+
+              const latestSenderId = getLatestMessageSenderId(chat);
+              if (!latestSenderId || latestSenderId === user?._id) {
+                return chat;
+              }
+
+              return {
+                ...chat,
+                latestMessage: {
+                  ...chat.latestMessage,
+                  status: 'seen',
+                },
+              };
+            })
+          );
+        }
+
+        if (chatId !== selectedChatId) {
           return;
         }
 
@@ -225,40 +319,7 @@ export const Chat: React.FC = () => {
         socket?.off('message deleted');
       };
     }
-  }, [selectedChatId, user?._id]);
-
-  const fetchChats = async () => {
-    setLoadingChats(true);
-    try {
-      const response = await api.get('/chats');
-      const formattedChats = response.data.map((chat: any) => ({
-        ...chat,
-        name: !chat.isGroupChat ? (chat.users?.find((u: any) => u._id !== user?._id)?.name || 'Chat') : (chat.chatName || 'Group Chat'),
-      }));
-      setChats(formattedChats);
-      if (formattedChats.length > 0 && !selectedChatId) {
-        setSelectedChatId(formattedChats[0]._id);
-      }
-    } catch (error) {
-      console.error('Failed to fetch chats:', error);
-      setMessageError('Failed to load chats');
-    } finally {
-      setLoadingChats(false);
-    }
-  };
-
-  const fetchMessages = async (chatId: string) => {
-    setLoadingMessages(true);
-    try {
-      const response = await api.get(`/messages/${chatId}`);
-      setMessages(response.data);
-    } catch (error) {
-      console.error('Failed to fetch messages:', error);
-      setMessageError('Failed to load messages');
-    } finally {
-      setLoadingMessages(false);
-    }
-  };
+  }, [selectedChatId, user?._id, fetchMessages, markChatAsSeen, syncLatestMessagePreview]);
 
   const handleSendMessage = async (payload: OutgoingMessagePayload) => {
     setMessageError('');
@@ -282,9 +343,13 @@ export const Chat: React.FC = () => {
         const updatedChat = {
           ...prev[chatIndex],
           latestMessage: {
+            _id: sentMessage._id,
             content: getMessagePreview(sentMessage),
             mediaType: sentMessage.mediaType,
             mediaUrl: sentMessage.mediaUrl,
+            createdAt: sentMessage.createdAt,
+            sender: sentMessage.sender,
+            status: sentMessage.status,
           },
         };
 
@@ -392,7 +457,9 @@ export const Chat: React.FC = () => {
       // Map to ensure chat has a name field just like fetchChats does
       const formattedChat = {
         ...chat,
-        name: !chat.isGroupChat ? (chat.users?.find((u: any) => u._id !== user?._id)?.name || 'Chat') : (chat.chatName || 'Group Chat'),
+        name: !chat.isGroupChat
+          ? (chat.users?.find((u) => u._id !== user?._id)?.name || 'Chat')
+          : (chat.chatName || 'Group Chat'),
       };
       if (prev.some(c => c._id === formattedChat._id)) return prev;
       return [formattedChat, ...prev];
@@ -415,6 +482,7 @@ export const Chat: React.FC = () => {
             onDeleteChat={handleDeleteChat}
             selectedChatId={selectedChatId}
             onlineUsers={onlineUsers}
+            currentUserId={user?._id || ''}
           />
         </div>
 

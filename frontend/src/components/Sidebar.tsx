@@ -10,10 +10,13 @@ interface Chat {
   name?: string;
   isGroupChat?: boolean;
   latestMessage?: {
+    _id?: string;
     content: string;
     mediaType?: 'image' | 'video' | 'link';
     mediaUrl?: string;
     createdAt?: string;
+    sender?: string | { _id?: string; toString?: () => string };
+    status?: 'sent' | 'delivered' | 'seen';
   };
   users?: Array<{ _id: string; name: string }>;
 }
@@ -25,9 +28,10 @@ interface SidebarProps {
   onDeleteChat?: (chatId: string) => void;
   selectedChatId?: string;
   onlineUsers?: string[];
+  currentUserId: string;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ chats, onSelectChat, onChatCreated, onDeleteChat, selectedChatId, onlineUsers = [] }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ chats, onSelectChat, onChatCreated, onDeleteChat, selectedChatId, onlineUsers = [], currentUserId }) => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'chats' | 'people'>('chats');
   const [searchQuery, setSearchQuery] = useState('');
@@ -128,6 +132,33 @@ export const Sidebar: React.FC<SidebarProps> = ({ chats, onSelectChat, onChatCre
     if (chat.latestMessage.mediaType === 'video') return 'Video';
     if (chat.latestMessage.mediaType === 'link') return chat.latestMessage.mediaUrl || 'Link';
     return 'No messages yet';
+  };
+
+  const getSenderId = (sender: Chat['latestMessage'] extends infer T
+    ? T extends { sender?: infer S }
+      ? S
+      : never
+    : never) => {
+    if (!sender) return '';
+
+    if (typeof sender === 'string') {
+      return sender;
+    }
+
+    if (typeof sender === 'object' && sender._id && typeof sender._id === 'string') {
+      return sender._id;
+    }
+
+    const maybeId = String(sender);
+    return maybeId === '[object Object]' ? '' : maybeId;
+  };
+
+  const hasUnreadMessages = (chat: Chat) => {
+    const latest = chat.latestMessage;
+    if (!latest?.sender) return false;
+    const senderId = getSenderId(latest.sender);
+    if (!senderId) return false;
+    return senderId !== currentUserId && latest.status !== 'seen';
   };
 
   // Which users to show in people tab
@@ -259,6 +290,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ chats, onSelectChat, onChatCre
                   const isOnline = isUserOnline(chat);
                   const lastMessageTime = chat.latestMessage?.createdAt ? formatTime(chat.latestMessage.createdAt) : '';
                   const isDeleting = deletingId === chat._id;
+                  const hasUnread = hasUnreadMessages(chat);
                   return (
                     <div key={chat._id} className="relative group/row">
                       <button
@@ -276,9 +308,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ chats, onSelectChat, onChatCre
                         <UserAvatar name={displayName} isOnline={isOnline} size="md" />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2 mb-0.5">
-                            <h3 className={`truncate text-[15px] font-semibold transition-colors ${selectedChatId === chat._id ? 'text-white' : 'text-slate-200'}`}>
-                              {displayName}
-                            </h3>
+                            <div className="min-w-0 flex items-center gap-2">
+                              <h3 className={`truncate text-[15px] font-semibold transition-colors ${selectedChatId === chat._id ? 'text-white' : 'text-slate-200'}`}>
+                                {displayName}
+                              </h3>
+                              {hasUnread && selectedChatId !== chat._id && (
+                                <span
+                                  className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)] shrink-0"
+                                  aria-label="Unread messages"
+                                  title="Unread messages"
+                                />
+                              )}
+                            </div>
                             {lastMessageTime && <span className={`text-[11px] font-medium ${selectedChatId === chat._id ? 'text-indigo-300' : 'text-slate-500'}`}>{lastMessageTime}</span>}
                           </div>
                           <p className={`truncate text-sm ${selectedChatId === chat._id ? 'text-slate-300' : 'text-slate-500'}`}>

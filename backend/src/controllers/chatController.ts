@@ -53,7 +53,13 @@ export const getAllChats = async (req: AuthRequest, res: Response) => {
       users: { $in: [objectId] },
     })
       .populate("users", "-password")
-      .populate("latestMessage")
+      .populate({
+        path: "latestMessage",
+        populate: {
+          path: "sender",
+          select: "_id name phoneNumber",
+        },
+      })
       .sort({ updatedAt: -1 });
 
     res.json(chats);
