@@ -9,6 +9,7 @@ import http from "http";
 import { initSocket } from "./sockets/socket";
 
 
+
 dotenv.config({ path: "./src/.env" });
 const app = express();
 connectDB();
@@ -22,6 +23,8 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/messages",messageRoutes);
+const onlineUsers = new Map<string, string>();
+
 
 // 🔥 Create HTTP server
 const server = http.createServer(app);
@@ -33,16 +36,27 @@ const io = initSocket(server);
 io.on("connection", (socket) => {
   console.log("🔥 User connected:", socket.id);
 
-  // Join room (user specific)
+  // Setup user and track online status
   socket.on("setup", (userId) => {
     socket.join(userId);
-    console.log("User joined:", userId);
+    onlineUsers.set(userId, socket.id);
+    io.emit("online users", Array.from(onlineUsers.keys()));
+    console.log("User setup:", userId, "Online users:", Array.from(onlineUsers.keys()));
   });
 
   // Join chat room
   socket.on("join chat", (chatId) => {
     socket.join(chatId);
     console.log("Joined chat:", chatId);
+  });   
+  
+  // Typing indicator
+  socket.on("typing", ({ chatId, userId }) => {
+    socket.to(chatId).emit("typing", { userId });
+  });
+
+  socket.on("stop typing", ({ chatId, userId }) => {
+    socket.to(chatId).emit("stop typing", { userId });
   });
 
   // Send message
@@ -58,7 +72,15 @@ io.on("connection", (socket) => {
     });
   });
 
+  // Handle disconnect
   socket.on("disconnect", () => {
+    for (let [userId, socketId] of onlineUsers.entries()) {
+      if (socketId === socket.id) {
+        onlineUsers.delete(userId);
+        break;
+      }
+    }
+    io.emit("online users", Array.from(onlineUsers.keys()));
     console.log("❌ User disconnected");
   });
 });

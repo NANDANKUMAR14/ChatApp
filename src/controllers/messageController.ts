@@ -6,6 +6,7 @@ import { getIO } from "../sockets/socket";
 export const sendMessage = async (req: Request, res: Response) => {
   const { content, chatId, senderId } = req.body;
 
+
   try {
     const io = getIO();
 
