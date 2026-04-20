@@ -129,5 +129,5 @@ async function decryptMessage(cipher: ArrayBuffer, privateKey: CryptoKey) {
 
 ## 👨‍💻 Contributers
 
-Abhishek Adiga TR
-Nandankumar 
+* Abhishek Adiga TR
+* Nandankumar 
