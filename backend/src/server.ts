@@ -19,7 +19,7 @@ const app = express();
 connectDB();
 
 const getAllowedOrigins = () => {
-  const raw = process.env.CLIENT_URL || "";
+  const raw = process.env.CLIENT_URL || process.env.FRONTEND_URL || "";
   const origins = raw
     .split(",")
     .map((origin) => origin.trim())
@@ -36,7 +36,7 @@ const getAllowedOrigins = () => {
 
 const allowedOrigins = getAllowedOrigins();
 const corsOptions = {
-  origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+  origin: allowedOrigins.length > 0 ? allowedOrigins : true,
   credentials: true,
 };
 

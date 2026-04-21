@@ -5,7 +5,7 @@ let io: Server;
 export const initSocket = (server: any, allowedOrigins: string[] = []) => {
   io = new Server(server, {
     cors: {
-      origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+      origin: allowedOrigins.length > 0 ? allowedOrigins : true,
       credentials: true,
     },
   });
