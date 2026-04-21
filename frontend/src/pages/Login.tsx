@@ -69,7 +69,7 @@ export const Login: React.FC = () => {
       <div className="relative z-10 w-full max-w-[980px] overflow-hidden rounded-xl bg-white shadow-[0_6px_18px_rgba(11,20,26,0.18)]">
         <div className="grid md:grid-cols-[1.15fr_1fr]">
           <section className="border-b border-[#e9edef] bg-[#f8f9fa] p-8 md:border-b-0 md:border-r">
-            <h1 className="text-3xl font-semibold text-[#111b21]">WhatsApp style chat</h1>
+            <h1 className="text-3xl font-semibold text-[#111b21]">ChatApp</h1>
             <p className="mt-3 text-sm leading-6 text-[#667781]">
               Sign in to continue your conversations in a clean WhatsApp-inspired interface.
             </p>
