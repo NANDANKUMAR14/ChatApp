@@ -23,6 +23,7 @@ const getAllowedOrigins = () => {
   const origins = raw
     .split(",")
     .map((origin) => origin.trim())
+    .map((origin) => origin.replace(/\/+$/, ""))
     .filter(Boolean);
 
   // Allow localhost during development when CLIENT_URL is not set.
@@ -66,7 +67,10 @@ io.use((socket, next) => {
       return next(new Error("Authentication failed"));
     }
 
-    const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
+    const JWT_SECRET = process.env.JWT_SECRET;
+    if (!JWT_SECRET) {
+      return next(new Error("Server misconfigured"));
+    }
     const decoded = jwt.verify(token, JWT_SECRET) as { id?: string };
 
     if (!decoded?.id) {
