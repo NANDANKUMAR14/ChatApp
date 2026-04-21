@@ -14,12 +14,33 @@ import { Chat } from "./models/chat";
 
 
 
-dotenv.config({ path: "./src/.env" });
+dotenv.config();
 const app = express();
 connectDB();
 
+const getAllowedOrigins = () => {
+  const raw = process.env.CLIENT_URL || "";
+  const origins = raw
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  // Allow localhost during development when CLIENT_URL is not set.
+  if (origins.length === 0 && process.env.NODE_ENV !== "production") {
+    return ["http://localhost:5173"];
+  }
+
+  return origins;
+};
+
+const allowedOrigins = getAllowedOrigins();
+const corsOptions = {
+  origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+  credentials: true,
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 //routes
@@ -35,7 +56,7 @@ const onlineUsers = new Map<string, string>();
 const server = http.createServer(app);
 
 // 🔥 Attach Socket.IO
-const io = initSocket(server);
+const io = initSocket(server, allowedOrigins);
 
 io.use((socket, next) => {
   try {
